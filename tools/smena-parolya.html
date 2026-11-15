@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Смена пароля | Математическая экология</title>
+<style>
+:root{--green:#174c3b;--green2:#286b51;--cream:#f7f7f2;--ink:#1d2924;--muted:#5f6d65;--line:#e2e8e2;--gold:#c6a76b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--cream);color:var(--ink);font-family:"Segoe UI",Roboto,Arial,sans-serif;line-height:1.55}
+main{width:min(720px,calc(100% - 32px));margin:40px auto}
+h1{font-family:Georgia,serif;font-weight:500;color:var(--green);font-size:30px;margin:0 0 8px}
+p{color:var(--muted)}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px;margin-top:18px}
+label{display:block;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--green2);font-weight:800;margin:14px 0 6px}
+input{width:100%;font:inherit;font-size:16px;letter-spacing:.06em;padding:11px 14px;border:1px solid #cfdcd2;border-radius:8px}
+.row{display:flex;gap:8px}
+.row input{flex:1;min-width:0}
+button{font:inherit;font-weight:700;font-size:14px;border-radius:8px;padding:11px 16px;cursor:pointer;border:1px solid var(--green);background:#fff;color:var(--green)}
+button.primary{background:var(--green);color:#fff;margin-top:18px}
+button:disabled{opacity:.5;cursor:default}
+.msg{min-height:1.4em;margin:12px 0 0;font-weight:600}
+.msg.err{color:#a23b2a}.msg.ok{color:var(--green2)}
+textarea{width:100%;min-height:170px;font-family:Consolas,monospace;font-size:13px;padding:12px;border:1px solid #cfdcd2;border-radius:8px;margin-top:8px}
+ol{padding-left:20px;color:var(--ink)}
+ol li{margin:6px 0}
+code{background:#eef2ee;padding:1px 6px;border-radius:4px}
+.note{border-left:3px solid var(--gold);padding:10px 14px;background:#fbf8f0;border-radius:6px;font-size:14px;color:#5c4a25}
+</style>
+</head>
+<body>
+<main>
+  <h1>Смена пароля</h1>
+  <p>Страница для автора. Пароль меняется прямо в браузере: на сервер ничего не отправляется. Сами материалы перешифровывать не нужно, меняется только файл ключей.</p>
+
+  <form class="card" id="form" autocomplete="off">
+    <label for="old">Текущий пароль</label>
+    <input id="old" type="password" required>
+    <label for="new">Новый пароль</label>
+    <div class="row">
+      <input id="new" type="text" required placeholder="не короче 10 знаков">
+      <button type="button" id="gen">Придумать</button>
+    </div>
+    <button type="submit" class="primary" id="go">Сменить пароль</button>
+    <p class="msg" id="msg" role="status" aria-live="polite"></p>
+  </form>
+
+  <div class="card" id="result" hidden>
+    <strong>Готово. Осталось сохранить новый файл ключей на GitHub:</strong>
+    <ol>
+      <li>Нажмите «Скопировать» под полем ниже.</li>
+      <li>Откройте в репозитории файл <code>assets/full/keys.json</code> и нажмите значок карандаша (Edit).</li>
+      <li>Удалите всё содержимое, вставьте скопированный текст и нажмите «Commit changes».</li>
+      <li>Через 1–2 минуты сайт обновится. Новый пароль: <strong id="newShow"></strong></li>
+    </ol>
+    <textarea id="out" readonly></textarea>
+    <button type="button" id="copy">Скопировать</button>
+    <p class="note">После смены все устройства, где входили со старым паролем, потеряют доступ: на них нужно будет ввести новый пароль.</p>
+  </div>
+</main>
+<script>
+(function () {
+  "use strict";
+  var ITER = 600000;
+  var ALPH = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  var $ = function (id) { return document.getElementById(id); };
+  var norm = function (pw) { return pw.toUpperCase().replace(/[\s-]+/g, ""); };
+  var b64 = function (s) { return Uint8Array.from(atob(s), function (c) { return c.charCodeAt(0); }); };
+  var toB64 = function (u8) { var s = ""; u8.forEach(function (b) { s += String.fromCharCode(b); }); return btoa(s); };
+
+  function genPassword() {
+    var r = crypto.getRandomValues(new Uint8Array(12)), out = "";
+    for (var i = 0; i < 12; i++) { out += ALPH[r[i] % 32]; if (i === 3 || i === 7) out += "-"; }
+    return out;
+  }
+  async function kekFrom(pw, salt, iter, usage) {
+    var base = await crypto.subtle.importKey("raw", new TextEncoder().encode(norm(pw)), "PBKDF2", false, ["deriveKey"]);
+    return crypto.subtle.deriveKey({ name: "PBKDF2", salt: salt, iterations: iter, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, [usage]);
+  }
+
+  $("gen").addEventListener("click", function () { $("new").value = genPassword(); });
+  $("copy").addEventListener("click", function () {
+    $("out").select();
+    (navigator.clipboard ? navigator.clipboard.writeText($("out").value) : Promise.reject()).catch(function () { document.execCommand("copy"); });
+    $("copy").textContent = "Скопировано";
+  });
+
+  $("form").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    var msg = $("msg"), oldPw = $("old").value, newPw = $("new").value.trim();
+    msg.className = "msg";
+    if (!window.crypto || !crypto.subtle) { msg.className = "msg err"; msg.textContent = "Браузер не поддерживает шифрование. Откройте страницу в Chrome, Edge, Firefox или Safari."; return; }
+    if (norm(newPw).length < 10) { msg.className = "msg err"; msg.textContent = "Новый пароль слишком короткий: нужно не меньше 10 знаков (без учёта дефисов)."; return; }
+    $("go").disabled = true; msg.textContent = "Проверяю текущий пароль…";
+    try {
+      var keys = await (await fetch("../assets/full/keys.json", { cache: "no-cache" })).json();
+      var oldKek = await kekFrom(oldPw, b64(keys.salt), keys.iter, "decrypt");
+      var wrapped = b64(keys.key);
+      var raw;
+      try {
+        raw = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: wrapped.slice(0, 12) }, oldKek, wrapped.slice(12)));
+      } catch (err) { throw new Error("wrong"); }
+      msg.textContent = "Создаю новый файл ключей…";
+      var salt = crypto.getRandomValues(new Uint8Array(16));
+      var iv = crypto.getRandomValues(new Uint8Array(12));
+      var newKek = await kekFrom(newPw, salt, ITER, "encrypt");
+      var ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, newKek, raw));
+      var packed = new Uint8Array(iv.length + ct.length); packed.set(iv); packed.set(ct, iv.length);
+      $("out").value = JSON.stringify({ v: 1, kdf: "PBKDF2-SHA256", iter: ITER, salt: toB64(salt), key: toB64(packed) }, null, 2) + "\n";
+      $("newShow").textContent = newPw;
+      $("result").hidden = false;
+      msg.className = "msg ok"; msg.textContent = "Новый файл ключей готов.";
+      $("result").scrollIntoView({ behavior: "smooth" });
+    } catch (err) {
+      msg.className = "msg err";
+      msg.textContent = err.message === "wrong" ? "Текущий пароль неверный." : "Не удалось загрузить файл ключей. Откройте эту страницу на опубликованном сайте.";
+    } finally { $("go").disabled = false; }
+  });
+})();
+</script>
+</body>
+</html>

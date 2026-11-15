@@ -63,7 +63,9 @@
     renderRegion();
     renderResults();
     renderReviews();
+    renderRequest();
     if (!$("#taskModal").hidden) renderModal();
+    if (!$("#docModal").hidden) renderDoc();
   }
 
   /* ---------- План занятий ---------- */
@@ -131,16 +133,203 @@
           </div></article>`;
       }
       const lang = t("matLang");
+      const full = !!access.key;
+      const label = full ? t("matOpenFull") : t("matView");
+      const status = full ? t("matUnlocked") : t("matFragment").replace("{n}", m.preview);
       return `<article class="card">
-        <a class="card-cover" href="${m.file}" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true"><img src="${m.cover}" alt="" loading="lazy"></a>
+        <button type="button" class="card-cover" data-doc="${m.doc}" tabindex="-1" aria-hidden="true"><img src="${m.cover}" alt="" loading="lazy" draggable="false"></button>
         <div class="card-body"><h3>${title}</h3><p>${esc(L(m.d))}</p>
-          <div class="card-meta">PDF · ${m.pages} ${esc(t("matPages"))} · ${m.size} ${esc(t("matMb"))}${lang ? " · " + esc(lang) : ""}</div>
+          <div class="card-meta">${m.pages} ${esc(t("matPages"))} · ${esc(status)}${lang ? " · " + esc(lang) : ""}</div>
           <div class="card-actions">
-            <a class="btn primary" href="${m.file}" target="_blank" rel="noopener" aria-label="${esc(t("matOpen"))}: ${title}">${icon("open")}<span>${esc(t("matOpen"))}</span></a>
-            <a class="btn ghost" href="${m.file}" download aria-label="${esc(t("matDownload"))}: ${title}">${icon("down")}<span>${esc(t("matDownload"))}</span></a>
+            <button type="button" class="btn primary" data-doc="${m.doc}" aria-label="${esc(label)}: ${title}">${icon(full ? "open" : "eye")}<span>${esc(label)}</span></button>
+            ${full ? "" : `<a class="card-req" href="#request">${esc(t("matRequest"))} →</a>`}
           </div>
         </div></article>`;
     }).join("");
+  }
+
+  /* ---------- Доступ к полным версиям по паролю ----------
+     Полные страницы лежат в assets/full/<документ>/<n>.bin в зашифрованном виде (AES-256-GCM).
+     Ключ страниц зашифрован паролем в assets/full/keys.json (PBKDF2-SHA256).
+     После ввода верного пароля ключ запоминается на этом устройстве. */
+  const access = { key: null, keys: null };
+  const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  const toB64 = (u8) => { let s = ""; u8.forEach((b) => { s += String.fromCharCode(b); }); return btoa(s); };
+  const normPw = (pw) => pw.toUpperCase().replace(/[\s-]+/g, "");
+  const cryptoOk = () => !!(window.crypto && window.crypto.subtle);
+  const pageCache = new Map();
+
+  async function loadKeys() {
+    if (!access.keys) {
+      const r = await fetch("assets/full/keys.json", { cache: "no-cache" });
+      if (!r.ok) throw new Error("keys");
+      access.keys = await r.json();
+    }
+    return access.keys;
+  }
+  const importK = (raw) => crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
+  function decryptBuf(key, buf) {
+    const u8 = new Uint8Array(buf);
+    return crypto.subtle.decrypt({ name: "AES-GCM", iv: u8.slice(0, 12) }, key, u8.slice(12));
+  }
+  async function unlock(password) {
+    const k = await loadKeys();
+    const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(normPw(password)), "PBKDF2", false, ["deriveKey"]);
+    const kek = await crypto.subtle.deriveKey({ name: "PBKDF2", salt: b64(k.salt), iterations: k.iter, hash: "SHA-256" },
+      base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+    const raw = new Uint8Array(await decryptBuf(kek, b64(k.key))); // неверный пароль → ошибка
+    access.key = await importK(raw);
+    try { localStorage.setItem("me-access", JSON.stringify({ k: toB64(raw), s: k.salt })); } catch (e) { /* только на эту сессию */ }
+  }
+  async function restoreAccess() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem("me-access") || "null"); } catch (e) { saved = null; }
+    if (!saved || !saved.k || !cryptoOk()) return false;
+    try {
+      const k = await loadKeys();
+      if (k.salt !== saved.s) { lock(); return false; } // пароль сменили — нужен новый
+      access.key = await importK(b64(saved.k));
+      return true;
+    } catch (e) { return false; }
+  }
+  function lock() {
+    access.key = null;
+    pageCache.forEach((p) => p.then((u) => URL.revokeObjectURL(u)).catch(() => {}));
+    pageCache.clear();
+    try { localStorage.removeItem("me-access"); } catch (e) { /* ничего */ }
+  }
+  function fullPageUrl(doc, i) {
+    const id = doc + "/" + i;
+    if (!pageCache.has(id)) {
+      const p = (async () => {
+        const r = await fetch(`assets/full/${doc}/${i}.bin`);
+        if (!r.ok) throw new Error("page");
+        const plain = await decryptBuf(access.key, await r.arrayBuffer());
+        return URL.createObjectURL(new Blob([plain], { type: "image/webp" }));
+      })();
+      p.catch(() => pageCache.delete(id));
+      pageCache.set(id, p);
+    }
+    return pageCache.get(id);
+  }
+
+  let formSeq = 0;
+  function unlockForm() {
+    const id = "pw-" + (++formSeq);
+    return `<form class="unlock" data-unlock novalidate>
+      <label for="${id}">${esc(t("pwLabel"))}</label>
+      <div class="unlock-row">
+        <input id="${id}" type="password" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX" required>
+        <button type="submit" class="btn primary">${esc(t("pwButton"))}</button>
+      </div>
+      <p class="unlock-msg" role="status" aria-live="polite"></p>
+    </form>`;
+  }
+  function contactsHTML() {
+    const c = typeof CONTACT === "object" ? CONTACT : {};
+    const items = [];
+    if (c.email) items.push(`<a class="req-item" href="mailto:${esc(c.email)}"><span class="res-ico">${icon("mail")}</span><span><span class="res-type">${esc(t("reqEmail"))}</span>${esc(c.email)}</span></a>`);
+    if (c.phone) items.push(`<a class="req-item" href="tel:${esc(c.phone.replace(/[^\d+]/g, ""))}"><span class="res-ico">${icon("phone")}</span><span><span class="res-type">${esc(t("reqPhone"))}</span>${esc(c.phone)}</span></a>`);
+    if (c.whatsapp) items.push(`<a class="req-item" href="https://wa.me/${esc(c.whatsapp.replace(/\D/g, ""))}" target="_blank" rel="noopener"><span class="res-ico">${icon("chat")}</span><span><span class="res-type">${esc(t("reqWhatsapp"))}</span>+${esc(c.whatsapp.replace(/\D/g, ""))}</span></a>`);
+    return items.length ? `<div class="request-contacts">${items.join("")}</div>` : `<p class="req-fallback">${esc(t("reqFallback"))}</p>`;
+  }
+
+  /* ---------- Блок «Полные версии» под карточками ---------- */
+  function renderRequest() {
+    if (access.key) {
+      $("#requestContacts").innerHTML = `<div class="access-open"><p>${icon("open")}<span>${esc(t("accessOpen"))}</span></p>
+        <button type="button" class="text-link" data-lock>${esc(t("accessLock"))}</button></div>`;
+    } else {
+      $("#requestContacts").innerHTML = unlockForm() + `<p class="route-sub req-how">${esc(t("reqHowGet"))}</p>` + contactsHTML();
+    }
+  }
+
+  async function onUnlockSubmit(form) {
+    const input = form.querySelector("input"), btn = form.querySelector("button"), msg = form.querySelector(".unlock-msg");
+    if (!cryptoOk()) { msg.textContent = t("pwNoCrypto"); msg.className = "unlock-msg err"; return; }
+    if (!input.value.trim()) { input.focus(); return; }
+    btn.disabled = true; msg.textContent = t("pwChecking"); msg.className = "unlock-msg";
+    try {
+      await unlock(input.value);
+      msg.textContent = t("pwOk"); msg.className = "unlock-msg ok";
+      renderMaterials();
+      renderRequest();
+      if (!$("#docModal").hidden) { viewer.page = 1; renderDoc(); $("#docNext").focus(); }
+    } catch (e) {
+      btn.disabled = false;
+      msg.textContent = t("pwWrong"); msg.className = "unlock-msg err";
+      input.select();
+    }
+  }
+
+  /* ---------- Просмотр документа: фрагмент или полная версия ---------- */
+  const viewer = { doc: null, page: 0, lastFocus: null, token: 0 };
+  const docInfo = (slug) => MATERIALS.find((m) => m.doc === slug);
+  const pageSrc = (slug, i) => `assets/preview/${slug}-${i}.webp`;
+
+  function openDoc(slug) {
+    if (!docInfo(slug)) return;
+    viewer.doc = slug; viewer.page = 1;
+    viewer.lastFocus = document.activeElement;
+    $("#docModal").hidden = false;
+    document.body.classList.add("modal-open");
+    renderDoc();
+    $("#docNext").focus();
+  }
+  function closeDoc() {
+    $("#docModal").hidden = true;
+    document.body.classList.remove("modal-open");
+    if (viewer.lastFocus && viewer.lastFocus.focus) viewer.lastFocus.focus();
+  }
+  function renderDoc() {
+    const m = docInfo(viewer.doc);
+    if (!m) return;
+    const full = !!access.key;
+    const n = full ? m.pages : m.preview;
+    if (viewer.page > (full ? n : n + 1)) viewer.page = 1;
+    const end = !full && viewer.page > n;
+    const token = ++viewer.token;
+    $("#docTitle").textContent = L(m.t);
+    $("#docMeta").textContent = full ? t("viewerFull").replace("{total}", m.pages)
+      : t("viewerFragment").replace("{n}", n).replace("{total}", m.pages);
+    if (end) {
+      $("#docBody").innerHTML = `<div class="doc-end">
+        <h4>${esc(t("viewerEndTitle"))}</h4>
+        <p>${esc(t("viewerEndText").replace("{n}", n).replace("{total}", m.pages))}</p>
+        ${unlockForm()}
+        <p class="route-sub req-how">${esc(t("reqHowGet"))}</p>
+        ${contactsHTML()}
+      </div>`;
+      $("#docCount").textContent = "";
+    } else {
+      const alt = `${L(m.t)} — ${t("viewerPage").replace("{i}", viewer.page).replace("{n}", n)}`;
+      if (full) {
+        $("#docBody").innerHTML = `<div class="doc-page loading"><img alt="${esc(alt)}" draggable="false"></div>`;
+        fullPageUrl(m.doc, viewer.page).then((u) => {
+          if (token !== viewer.token) return;
+          const img = $("#docBody img");
+          if (img) { img.src = u; img.parentElement.classList.remove("loading"); }
+        }).catch(() => {
+          if (token === viewer.token) $("#docBody").innerHTML = `<p class="doc-error">${esc(t("accessLoadError"))}</p>`;
+        });
+        if (viewer.page < n) fullPageUrl(m.doc, viewer.page + 1).catch(() => {});
+      } else {
+        $("#docBody").innerHTML = `<div class="doc-page"><img src="${pageSrc(m.doc, viewer.page)}" alt="${esc(alt)}" draggable="false"></div>`;
+        if (viewer.page < n) { const pre = new Image(); pre.src = pageSrc(m.doc, viewer.page + 1); }
+      }
+      $("#docCount").textContent = t("viewerPage").replace("{i}", viewer.page).replace("{n}", n);
+    }
+    $("#docBody").scrollTop = 0;
+    $("#docPrev").disabled = viewer.page <= 1;
+    $("#docNext").disabled = full ? viewer.page >= n : end;
+  }
+  function stepDoc(d) {
+    const m = docInfo(viewer.doc);
+    if (!m) return;
+    const max = access.key ? m.pages : m.preview + 1;
+    const p = viewer.page + d;
+    if (p < 1 || p > max) return;
+    viewer.page = p; renderDoc();
   }
 
   /* ---------- Тренажёр задач ---------- */
@@ -424,6 +613,41 @@
       }
     });
 
+    // Фрагменты документов
+    document.addEventListener("click", (e) => {
+      const d = e.target.closest && e.target.closest("[data-doc]");
+      if (d) { e.preventDefault(); openDoc(d.dataset.doc); }
+    });
+    $("#docModal").addEventListener("click", (e) => {
+      if (e.target.closest("[data-close]")) closeDoc();
+      else if (e.target.closest('a[href="#request"]')) closeDoc();
+    });
+    document.addEventListener("submit", (e) => {
+      const f = e.target.closest && e.target.closest("form[data-unlock]");
+      if (f) { e.preventDefault(); onUnlockSubmit(f); }
+    });
+    document.addEventListener("click", (e) => {
+      if (e.target.closest && e.target.closest("[data-lock]")) { lock(); renderMaterials(); renderRequest(); }
+    });
+    $("#docPrev").addEventListener("click", () => stepDoc(-1));
+    $("#docNext").addEventListener("click", () => stepDoc(1));
+    document.addEventListener("keydown", (e) => {
+      if ($("#docModal").hidden) return;
+      if (e.key === "Escape") closeDoc();
+      if (e.key === "ArrowRight") stepDoc(1);
+      if (e.key === "ArrowLeft") stepDoc(-1);
+      if (e.key === "Tab") {
+        const f = $$("#docModal button:not([disabled]), #docModal a[href]");
+        const first = f[0], last = f[f.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    });
+    // Без контекстного меню «Сохранить картинку» на страницах документов и обложках
+    document.addEventListener("contextmenu", (e) => {
+      if (e.target.closest && e.target.closest(".doc-page, .card-cover")) e.preventDefault();
+    });
+
     // Экскурсии
     $("#excTabs").addEventListener("click", (e) => { const b = e.target.closest("[data-route]"); if (b) selectRoute(b.dataset.route); });
     $("#excTabs").addEventListener("keydown", (e) => tabKeys(e, "#excTabs .route-tab", (b, f) => selectRoute(b.dataset.route, f)));
@@ -469,4 +693,5 @@
   state.lang = readLang();
   bind();
   renderAll();
+  restoreAccess().then((ok) => { if (ok) { renderMaterials(); renderRequest(); } });
 })();
