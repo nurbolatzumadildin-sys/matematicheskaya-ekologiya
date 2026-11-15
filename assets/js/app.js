@@ -243,9 +243,11 @@
     const c = typeof CONTACT === "object" ? CONTACT : {};
     const items = [];
     if (c.email) items.push(`<a class="req-item" href="mailto:${esc(c.email)}"><span class="res-ico">${icon("mail")}</span><span><span class="res-type">${esc(t("reqEmail"))}</span>${esc(c.email)}</span></a>`);
-    if (c.phone) items.push(`<a class="req-item" href="tel:${esc(c.phone.replace(/[^\d+]/g, ""))}"><span class="res-ico">${icon("phone")}</span><span><span class="res-type">${esc(t("reqPhone"))}</span>${esc(c.phone)}</span></a>`);
+    if (c.phone) items.push(`<a class="req-item" href="tel:${esc((c.phoneLink || c.phone).replace(/[^\d+]/g, ""))}"><span class="res-ico">${icon("phone")}</span><span><span class="res-type">${esc(t("reqPhone"))}</span>${esc(c.phone)}</span></a>`);
     if (c.whatsapp) items.push(`<a class="req-item" href="https://wa.me/${esc(c.whatsapp.replace(/\D/g, ""))}" target="_blank" rel="noopener"><span class="res-ico">${icon("chat")}</span><span><span class="res-type">${esc(t("reqWhatsapp"))}</span>+${esc(c.whatsapp.replace(/\D/g, ""))}</span></a>`);
-    return items.length ? `<div class="request-contacts">${items.join("")}</div>` : `<p class="req-fallback">${esc(t("reqFallback"))}</p>`;
+    if (!items.length) return `<p class="req-fallback">${esc(t("reqFallback"))}</p>`;
+    const who = c.name ? `<p class="req-name"><span>${esc(t("reqWho"))}</span>${esc(c.name)}</p>` : "";
+    return who + `<div class="request-contacts">${items.join("")}</div>`;
   }
 
   /* ---------- Блок «Полные версии» под карточками ---------- */

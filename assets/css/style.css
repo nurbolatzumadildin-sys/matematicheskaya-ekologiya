@@ -368,6 +368,8 @@ button.text-link{background:none;border:0;border-bottom:1px solid transparent;pa
 .request-contacts{display:grid;gap:8px}
 .req-item{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-size:14px;color:#2c3a33;transition:border-color .2s}
 .req-item:hover{border-color:var(--green3)}
+.req-name{margin:0 0 8px!important;font-size:14.5px!important;color:var(--green)!important;font-weight:600}
+.req-name span{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700}
 .req-fallback{font-size:14px;color:#3e4c44!important;margin:0}
 .doc-box{position:relative;background:#fff;border-radius:18px;width:min(920px,100%);height:calc(100vh - 40px);display:flex;flex-direction:column;box-shadow:var(--shadow-lg);overflow:hidden}
 .doc-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:16px 20px;border-bottom:1px solid var(--line)}
