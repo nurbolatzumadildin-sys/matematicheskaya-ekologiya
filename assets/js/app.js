@@ -26,23 +26,16 @@
   const t = (key) => (UI[state.lang] && UI[state.lang][key] != null ? UI[state.lang][key] : UI.ru[key] || "");
 
   /* ---------- Статистика (Google Analytics 4) ----------
-     Включается, когда в data.js заполнен ANALYTICS.ga4. Пароли и личные данные не передаются. */
-  const gaId = (typeof ANALYTICS === "object" && /^G-[A-Z0-9]+$/.test(ANALYTICS.ga4 || "")) ? ANALYTICS.ga4 : "";
+     Код счётчика Google стоит в начале index.html; здесь только события.
+     Пароли и личные данные не передаются. */
+  const gaOn = () => typeof window.gtag === "function";
   function initAnalytics() {
-    if (!gaId) return;
-    window.dataLayer = window.dataLayer || [];
-    window.gtag = function () { window.dataLayer.push(arguments); };
-    window.gtag("js", new Date());
-    window.gtag("config", gaId, { site_language: state.lang });
-    const sc = document.createElement("script");
-    sc.async = true;
-    sc.src = "https://www.googletagmanager.com/gtag/js?id=" + gaId;
-    document.head.appendChild(sc);
+    if (!gaOn()) return;
     const note = document.getElementById("analyticsNote");
     if (note) note.hidden = false;
   }
   function track(name, id) {
-    if (gaId && window.gtag) window.gtag("event", name, id == null ? {} : { content_id: String(id) });
+    if (gaOn()) window.gtag("event", name, id == null ? {} : { content_id: String(id) });
   }
   const L = (obj) => (obj ? (obj[state.lang] != null ? obj[state.lang] : obj.ru) : "");
   const sectionShort = (s) => (s === 5 ? t("tasksFinal") : L(SECTIONS[s - 1].short));
