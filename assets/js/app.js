@@ -83,6 +83,7 @@
     renderRegion();
     renderResults();
     renderReviews();
+    renderJournal();
     renderRequest();
     if (!$("#taskModal").hidden) renderModal();
     if (!$("#docModal").hidden) renderDoc();
@@ -529,6 +530,30 @@
     $$(".lv-seg .lbl").forEach((l) => { l.style.visibility = ""; if (l.scrollWidth > l.parentElement.clientWidth - 4) l.style.visibility = "hidden"; });
   }
   window.addEventListener("resize", fitLabels);
+
+  function renderJournal() {
+    if (typeof JOURNAL === "undefined" || !JOURNAL.length) return;
+    const lv = (x) => (x >= 10 ? "high" : x >= 6 ? "mid" : "low");
+    const chip = (x) => `<span class="lv-chip ${lv(x)}">${esc(t("lvlShort_" + lv(x)))}</span>`;
+    const rows = JOURNAL.map(([code, m1, e1, d1, m2, e2, d2]) => {
+      const a = m1 + e1 + d1, b = m2 + e2 + d2, d = b - a;
+      return `<tr><th scope="row">${esc(code)}</th><td class="num">${m1}</td><td class="num">${e1}</td><td class="num">${d1}</td><td class="num tot">${a}</td><td>${chip(a)}</td>
+        <td class="num">${m2}</td><td class="num">${e2}</td><td class="num">${d2}</td><td class="num tot">${b}</td><td>${chip(b)}</td>
+        <td class="num delta${d > 0 ? " up" : ""}">${d > 0 ? "+" + d : d}</td></tr>`;
+    }).join("");
+    const n = JOURNAL.length, avg = (i) => fmt(JOURNAL.reduce((s, r) => s + r[i], 0) / n);
+    const tot = (o) => JOURNAL.reduce((s, r) => s + r[o] + r[o + 1] + r[o + 2], 0) / n;
+    const head = `${esc(t("jMath"))}</th><th class="num">${esc(t("jEco"))}</th><th class="num">${esc(t("jDig"))}</th><th class="num">${esc(t("jTotal"))}</th><th>${esc(t("jLevel"))}`;
+    $("#journalTable").innerHTML = `
+      <thead>
+        <tr><th rowspan="2">${esc(t("jCode"))}</th><th colspan="5" class="grp">${esc(t("rowBefore"))}</th><th colspan="5" class="grp">${esc(t("rowAfter"))}</th><th rowspan="2" class="num">${esc(t("jDelta"))}</th></tr>
+        <tr><th class="num">${head}</th><th class="num">${head}</th></tr>
+      </thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr><th scope="row">${esc(t("jAvg"))}</th><td class="num">${avg(1)}</td><td class="num">${avg(2)}</td><td class="num">${avg(3)}</td><td class="num tot">${fmt(tot(1))}</td><td></td>
+        <td class="num">${avg(4)}</td><td class="num">${avg(5)}</td><td class="num">${avg(6)}</td><td class="num tot">${fmt(tot(4))}</td><td></td>
+        <td class="num delta up">+${fmt(Math.round(tot(4) * 100) / 100 - Math.round(tot(1) * 100) / 100)}</td></tr></tfoot>`;
+  }
 
   function renderReviews() {
     $("#reviews").innerHTML = REVIEWS.map((r) => `

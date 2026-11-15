@@ -294,6 +294,20 @@ a.badge.exc:hover{border-color:var(--green3)}
 .data-table th,.data-table td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left}
 .data-table th{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .data-table td.num,.data-table th.num{text-align:right;font-variant-numeric:tabular-nums}
+.journal-note{font-size:12.5px;color:var(--muted);margin:10px 0 0}
+.journal table{min-width:760px;font-size:12.5px}
+.journal th,.journal td{padding:6px 8px}
+.journal thead th{text-transform:none;letter-spacing:0;font-size:11.5px}
+.journal thead th.grp{text-align:center;border-bottom:1px solid var(--line);color:var(--green);font-weight:700}
+.journal tbody th,.journal tfoot th{font-weight:600;color:#3e4c44;text-align:left;white-space:nowrap;text-transform:none;letter-spacing:0;font-size:12.5px}
+.journal td.tot{font-weight:700;color:var(--green)}
+.journal td.delta.up{color:var(--green2);font-weight:700}
+.journal tfoot td,.journal tfoot th{border-top:2px solid var(--line);border-bottom:0;font-weight:700}
+.journal tbody tr:hover{background:#f7faf7}
+.lv-chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.lv-chip.low{background:var(--lvl-low);color:#1d2924}
+.lv-chip.mid{background:var(--lvl-mid);color:#fff}
+.lv-chip.high{background:var(--lvl-high);color:#fff}
 .reviews-title{font-size:26px;margin:48px 0 16px}
 .reviews{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
 .review{margin:0;background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px;display:flex;flex-direction:column}
