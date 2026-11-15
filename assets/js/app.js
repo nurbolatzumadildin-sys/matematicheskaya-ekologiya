@@ -24,6 +24,26 @@
   };
 
   const t = (key) => (UI[state.lang] && UI[state.lang][key] != null ? UI[state.lang][key] : UI.ru[key] || "");
+
+  /* ---------- Статистика (Google Analytics 4) ----------
+     Включается, когда в data.js заполнен ANALYTICS.ga4. Пароли и личные данные не передаются. */
+  const gaId = (typeof ANALYTICS === "object" && /^G-[A-Z0-9]+$/.test(ANALYTICS.ga4 || "")) ? ANALYTICS.ga4 : "";
+  function initAnalytics() {
+    if (!gaId) return;
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function () { window.dataLayer.push(arguments); };
+    window.gtag("js", new Date());
+    window.gtag("config", gaId, { site_language: state.lang });
+    const sc = document.createElement("script");
+    sc.async = true;
+    sc.src = "https://www.googletagmanager.com/gtag/js?id=" + gaId;
+    document.head.appendChild(sc);
+    const note = document.getElementById("analyticsNote");
+    if (note) note.hidden = false;
+  }
+  function track(name, id) {
+    if (gaId && window.gtag) window.gtag("event", name, id == null ? {} : { content_id: String(id) });
+  }
   const L = (obj) => (obj ? (obj[state.lang] != null ? obj[state.lang] : obj.ru) : "");
   const sectionShort = (s) => (s === 5 ? t("tasksFinal") : L(SECTIONS[s - 1].short));
   const stars = (l) => "★".repeat(l);
@@ -252,12 +272,14 @@
     try {
       await unlock(input.value);
       msg.textContent = t("pwOk"); msg.className = "unlock-msg ok";
+      track("password_success");
       renderMaterials();
       renderRequest();
       if (!$("#docModal").hidden) { viewer.page = 1; renderDoc(); $("#docNext").focus(); }
     } catch (e) {
       btn.disabled = false;
       msg.textContent = t("pwWrong"); msg.className = "unlock-msg err";
+      track("password_fail");
       input.select();
     }
   }
@@ -275,6 +297,7 @@
     document.body.classList.add("modal-open");
     renderDoc();
     $("#docNext").focus();
+    track(access.key ? "open_full_document" : "open_fragment", slug);
   }
   function closeDoc() {
     $("#docModal").hidden = true;
@@ -556,6 +579,7 @@
       state.lang = state.lang === "ru" ? "kz" : "ru";
       saveLang();
       renderAll();
+      track("switch_language", state.lang);
     });
 
     const nav = $("#mainNav"), menu = $("#menuBtn");
@@ -566,7 +590,7 @@
     $$("#mainNav a").forEach((a) => a.addEventListener("click", () => { nav.classList.remove("open"); menu.setAttribute("aria-expanded", "false"); }));
 
     // План
-    $("#planTabs").addEventListener("click", (e) => { const b = e.target.closest("[data-sec]"); if (b) selectPlan(+b.dataset.sec); });
+    $("#planTabs").addEventListener("click", (e) => { const b = e.target.closest("[data-sec]"); if (b) { selectPlan(+b.dataset.sec); track("open_plan_section", b.dataset.sec); } });
     $("#planTabs").addEventListener("keydown", (e) => tabKeys(e, "#planTabs .tab", (b, f) => selectPlan(+b.dataset.sec, f)));
     $("#planPanel").addEventListener("click", (e) => {
       const a = e.target.closest("[data-route]");
@@ -582,17 +606,20 @@
         const n = +tg.dataset.toggle;
         const open = !state.openAnswers.has(n);
         open ? state.openAnswers.add(n) : state.openAnswers.delete(n);
+        if (open) track("show_answer", "task_" + n);
         $("#ans-" + n).hidden = !open;
         tg.setAttribute("aria-expanded", open);
         tg.textContent = open ? t("tasksHide") : t("tasksShow");
         return;
       }
       const pj = e.target.closest("[data-project]");
-      if (pj) openModal(+pj.dataset.project);
+      if (pj) { openModal(+pj.dataset.project); track("task_on_screen", "task_" + pj.dataset.project); }
     });
     $("#randomTask").addEventListener("click", () => {
       const list = filteredTasks().length ? filteredTasks() : TASKS;
-      openModal(list[Math.floor(Math.random() * list.length)].n);
+      const pick = list[Math.floor(Math.random() * list.length)].n;
+      openModal(pick);
+      track("random_task", "task_" + pick);
     });
 
     // Окно
@@ -627,7 +654,7 @@
       if (f) { e.preventDefault(); onUnlockSubmit(f); }
     });
     document.addEventListener("click", (e) => {
-      if (e.target.closest && e.target.closest("[data-lock]")) { lock(); renderMaterials(); renderRequest(); }
+      if (e.target.closest && e.target.closest("[data-lock]")) { lock(); renderMaterials(); renderRequest(); track("access_closed"); }
     });
     $("#docPrev").addEventListener("click", () => stepDoc(-1));
     $("#docNext").addEventListener("click", () => stepDoc(1));
@@ -649,7 +676,7 @@
     });
 
     // Экскурсии
-    $("#excTabs").addEventListener("click", (e) => { const b = e.target.closest("[data-route]"); if (b) selectRoute(b.dataset.route); });
+    $("#excTabs").addEventListener("click", (e) => { const b = e.target.closest("[data-route]"); if (b) { selectRoute(b.dataset.route); track("open_excursion", b.dataset.route); } });
     $("#excTabs").addEventListener("keydown", (e) => tabKeys(e, "#excTabs .route-tab", (b, f) => selectRoute(b.dataset.route, f)));
     $("#excPanel").addEventListener("click", (e) => {
       const rt = e.target.closest("[data-rt]");
@@ -693,5 +720,6 @@
   state.lang = readLang();
   bind();
   renderAll();
+  initAnalytics();
   restoreAccess().then((ok) => { if (ok) { renderMaterials(); renderRequest(); } });
 })();
